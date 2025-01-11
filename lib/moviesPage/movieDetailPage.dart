@@ -1,5 +1,11 @@
 import 'dart:io';
 
+import 'package:Mirarr/functions/fetchers/fetch_movie_credits.dart';
+import 'package:Mirarr/functions/fetchers/fetch_movie_details.dart';
+import 'package:Mirarr/functions/fetchers/fetch_other_movies_by_director.dart';
+import 'package:Mirarr/functions/get_base_url.dart';
+import 'package:Mirarr/functions/regionprovider_class.dart';
+import 'package:Mirarr/moviesPage/checkers/custom_tmdb_ids_effects.dart';
 import 'package:Mirarr/moviesPage/functions/get_imdb_rating.dart';
 import 'package:Mirarr/moviesPage/functions/movie_tmdb_actions.dart';
 import 'package:Mirarr/moviesPage/functions/on_tap_movie.dart';
@@ -7,7 +13,6 @@ import 'package:Mirarr/moviesPage/functions/on_tap_movie_desktop.dart';
 import 'package:Mirarr/moviesPage/functions/torrent_links.dart';
 import 'package:Mirarr/moviesPage/functions/watch_links.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
@@ -20,6 +25,7 @@ import 'package:Mirarr/moviesPage/functions/check_availability.dart';
 import 'package:Mirarr/widgets/custom_divider.dart';
 import 'package:Mirarr/widgets/image_gallery_page.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:provider/provider.dart';
 
 class MovieDetailPage extends StatefulWidget {
   final String movieTitle;
@@ -68,11 +74,13 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
   void initState() {
     super.initState();
     checkUserLogin();
-    fetchMovieDetails();
+    _fetchMovieDetails();
     checkAccountState();
     _loadMovieImages();
 
-    fetchCredits(widget.movieId);
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    fetchCredits(widget.movieId, region);
   }
 
   void _loadMovieImages() {
@@ -88,37 +96,6 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
     );
   }
 
-  Future<List<dynamic>> _fetchOtherMoviesByDirector(int castId) async {
-    final response = await http.get(
-      Uri.parse(
-          'https://api.themoviedb.org/3/person/$castId/movie_credits?api_key=$apiKey'),
-    );
-    if (response.statusCode == 200) {
-      final decoded = json.decode(response.body);
-      final List<dynamic> movies = decoded['crew'];
-
-      Set<int> movieIds = {};
-
-      List<dynamic> filteredMovies = [];
-
-      for (var movie in movies) {
-        // Check if the crew member's job is "Director"
-        if (movie['job'] == 'Director') {
-          // Add the movie only if it has a poster path and not already added
-          if (movie['poster_path'] != null &&
-              movie['poster_path'] != '' &&
-              !movieIds.contains(movie['id'])) {
-            filteredMovies.add(movie);
-            movieIds.add(movie['id']);
-          }
-        }
-      }
-      return filteredMovies;
-    } else {
-      throw Exception('Failed to load other movies');
-    }
-  }
-
   Future<void> checkUserLogin() async {
     final openbox = await Hive.openBox('sessionBox');
     final sessionData = openbox.get('sessionData');
@@ -132,9 +109,12 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
   Future<void> checkAccountState() async {
     final openbox = await Hive.openBox('sessionBox');
     final sessionId = openbox.get('sessionData');
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    final baseUrl = getBaseUrl(region);
     final response = await http.get(
       Uri.parse(
-        'https://api.themoviedb.org/3/movie/${widget.movieId}/account_states?api_key=$apiKey&session_id=$sessionId',
+        '${baseUrl}movie/${widget.movieId}/account_states?api_key=$apiKey&session_id=$sessionId',
       ),
     );
 
@@ -152,9 +132,11 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
   }
 
   Future<List<String>> _fetchMovieImages(int movieId) async {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    final baseUrl = getBaseUrl(region);
     final response = await http.get(
-      Uri.parse(
-          'https://api.themoviedb.org/3/movie/$movieId/images?api_key=$apiKey'),
+      Uri.parse('${baseUrl}movie/$movieId/images?api_key=$apiKey'),
     );
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body)['backdrops'];
@@ -176,87 +158,40 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
     });
   }
 
-  Future<void> fetchMovieDetails() async {
+  Future<void> _fetchMovieDetails() async {
     try {
-      // Make an HTTP GET request to fetch movie details from the first API
-      final response = await http.get(
-        Uri.parse(
-          'https://api.themoviedb.org/3/movie/${widget.movieId}?api_key=$apiKey',
-        ),
-      );
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        setState(() {
-          moviedetails = responseData;
-          budget = responseData['budget'];
-          revenue = responseData['revenue'];
-          genres = responseData['genres'];
-          backdrops = responseData['backdrop_path'];
-          score = responseData['vote_average'];
-          about = responseData['overview'];
-          duration = responseData['runtime'];
-          releaseDate = responseData['release_date'];
-          language = responseData['original_language'];
-          productionCountries = responseData['production_countries'];
-          productionCompanies = responseData['production_companies'];
-          spokenLanguages = responseData['spoken_languages'];
-          imdbId = responseData['imdb_id'];
-        });
-        if (imdbId != null) {
-          await getMovieRatings(
-              imdbId, updateImdbRating, updateRottenTomatoesRating);
-        }
-      } else {
-        throw Exception('Failed to load movie details');
+      final region =
+          Provider.of<RegionProvider>(context, listen: false).currentRegion;
+      final responseData = await fetchMovieDetails(widget.movieId, region);
+      setState(() {
+        moviedetails = responseData;
+        budget = responseData['budget'];
+        revenue = responseData['revenue'];
+        genres = responseData['genres'];
+        backdrops = responseData['backdrop_path'];
+        score = responseData['vote_average'];
+        about = responseData['overview'];
+        duration = responseData['runtime'];
+        releaseDate = responseData['release_date'];
+        language = responseData['original_language'];
+        productionCountries = responseData['production_countries'];
+        productionCompanies = responseData['production_companies'];
+        spokenLanguages = responseData['spoken_languages'];
+        imdbId = responseData['imdb_id'];
+      });
+      if (imdbId != null) {
+        await getMovieRatings(
+            imdbId, updateImdbRating, updateRottenTomatoesRating);
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error: $e');
-      }
-    }
-  }
-
-  Future<Map<String, List<Map<String, dynamic>>>> fetchCredits(
-      int movieId) async {
-    try {
-      final response = await http.get(
-        Uri.parse(
-          'https://api.themoviedb.org/3/movie/$movieId/credits?api_key=$apiKey',
-        ),
-      );
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        final List<dynamic> castList = responseData['cast'];
-        final List<Map<String, dynamic>> allCastList =
-            castList.cast<Map<String, dynamic>>().toList();
-
-        // Fetch director details
-        final List<dynamic> crewList = responseData['crew'];
-        final List<Map<String, dynamic>> allCrewList =
-            crewList.cast<Map<String, dynamic>>().toList();
-
-        return {
-          'cast': allCastList,
-          'crew': allCrewList,
-        };
-      } else {
-        throw Exception('Failed to load cast and crew details');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error: $e');
-      }
-      return {
-        'cast': [],
-        'crew': [],
-      };
+      throw Exception('Failed to load movie details');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
     int? hours = duration != null ? duration! ~/ 60 : null;
     int? minutes = duration != null ? duration! % 60 : null;
     String year = releaseDate != null && releaseDate!.isNotEmpty
@@ -281,7 +216,7 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                       children: [
                         CachedNetworkImage(
                           imageUrl:
-                              'https://image.tmdb.org/t/p/original$backdrops',
+                              '${getImageBaseUrl(region)}/t/p/original$backdrops',
                           placeholder: (context, url) =>
                               const Center(child: CircularProgressIndicator()),
                           errorWidget: (context, url, error) =>
@@ -375,7 +310,7 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                           ),
                         ),
                         Positioned(
-                          bottom: 30,
+                          bottom: 28,
                           left: 10,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,11 +327,7 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                                   softWrap: true,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
+                                  style: getMovieTitleTextStyle(widget.movieId),
                                 ),
                               ),
                             ],
@@ -696,10 +627,8 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                         alignment: Alignment.center,
                         child: Text(
                           about!,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w300,
-                          ),
+                          style:
+                              getMovieAboutTextStyle(context, widget.movieId),
                           textAlign: TextAlign.left,
                         )),
                   ),
@@ -714,7 +643,8 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                           child: Container(
                             padding: const EdgeInsets.fromLTRB(5, 5, 5, 5),
                             decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.2),
+                              color: getMovieBackgroundColor(
+                                  context, widget.movieId),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Column(
@@ -747,7 +677,8 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                           child: Container(
                             padding: const EdgeInsets.fromLTRB(5, 5, 5, 5),
                             decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.2),
+                              color: getMovieBackgroundColor(
+                                  context, widget.movieId),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Column(
@@ -780,7 +711,8 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                           child: Container(
                             padding: const EdgeInsets.fromLTRB(5, 5, 5, 5),
                             decoration: BoxDecoration(
-                              color: Colors.grey.withOpacity(0.2),
+                              color: getMovieBackgroundColor(
+                                  context, widget.movieId),
                               borderRadius: BorderRadius.circular(10),
                             ),
                             child: Column(
@@ -820,7 +752,7 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                       children: [
                         Center(
                           child: FutureBuilder(
-                              future: checkAvailability(widget.movieId),
+                              future: checkAvailability(widget.movieId, region),
                               builder: (context, snapshot) {
                                 if (snapshot.connectionState ==
                                     ConnectionState.waiting) {
@@ -835,16 +767,18 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                                       ? SizedBox(
                                           width: double.maxFinite,
                                           child: FloatingActionButton(
-                                            backgroundColor:
-                                                Theme.of(context).primaryColor,
-                                            onPressed: () => showWatchOptions(
+                                            backgroundColor: getMovieColor(
                                                 context, widget.movieId),
-                                            child: const Text(
+                                            onPressed: () => showWatchOptions(
+                                                context,
+                                                widget.movieId,
+                                                widget.movieTitle,
+                                                releaseDate ?? '',
+                                                imdbId ?? ''),
+                                            child: Text(
                                               'Watch',
-                                              style: TextStyle(
-                                                  color: Colors.black,
-                                                  fontSize: 20,
-                                                  fontWeight: FontWeight.bold),
+                                              style: getMovieButtonTextStyle(
+                                                  widget.movieId),
                                             ),
                                           ),
                                         )
@@ -862,29 +796,27 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                       children: [
                         Center(
                             child: SizedBox(
-                          width: double.maxFinite,
-                          child: FloatingActionButton(
-                            backgroundColor: Theme.of(context).primaryColor,
-                            onPressed: () => showTorrentOptions(
-                                context,
-                                widget.movieId,
-                                widget.movieTitle,
-                                releaseDate,
-                                imdbId),
-                            child: const Text(
-                              'Torrent Search',
-                              style: TextStyle(
-                                  color: Colors.black,
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ))
+                                width: double.maxFinite,
+                                child: FloatingActionButton(
+                                  backgroundColor:
+                                      getMovieColor(context, widget.movieId),
+                                  onPressed: () => showTorrentOptions(
+                                      context,
+                                      widget.movieId,
+                                      widget.movieTitle,
+                                      releaseDate,
+                                      imdbId),
+                                  child: Text(
+                                    'Torrent Search',
+                                    style:
+                                        getMovieButtonTextStyle(widget.movieId),
+                                  ),
+                                )))
                       ],
                     ),
                   ),
                   FutureBuilder(
-                    future: fetchCredits(widget.movieId),
+                    future: fetchCredits(widget.movieId, region),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
@@ -906,16 +838,14 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                               children: [
                                 Padding(
                                   padding:
-                                      const EdgeInsets.fromLTRB(25, 10, 0, 0),
+                                      const EdgeInsets.fromLTRB(25, 15, 0, 0),
                                   child: Text(
                                     'Cast',
                                     textAlign: TextAlign.justify,
-                                    style: TextStyle(
-                                        color: Theme.of(context).primaryColor,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w700),
+                                    style:
+                                        getMovieTitleTextStyle(widget.movieId),
                                   ),
-                                )
+                                ),
                               ],
                             ),
                             const CustomDivider(),
@@ -924,14 +854,12 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                               children: [
                                 Padding(
                                   padding:
-                                      const EdgeInsets.fromLTRB(25, 10, 0, 0),
+                                      const EdgeInsets.fromLTRB(25, 15, 0, 0),
                                   child: Text(
                                     'Crew',
                                     textAlign: TextAlign.justify,
-                                    style: TextStyle(
-                                        color: Theme.of(context).primaryColor,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w700),
+                                    style:
+                                        getMovieTitleTextStyle(widget.movieId),
                                   ),
                                 ),
                               ],
@@ -945,7 +873,7 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                   ),
                   const CustomDivider(),
                   FutureBuilder(
-                    future: fetchCredits(widget.movieId),
+                    future: fetchCredits(widget.movieId, region),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting) {
                         return const Center(child: CircularProgressIndicator());
@@ -976,19 +904,17 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                                 alignment: Alignment.topLeft,
                                 child: Padding(
                                   padding:
-                                      const EdgeInsets.fromLTRB(25, 0, 10, 0),
+                                      const EdgeInsets.fromLTRB(25, 15, 10, 0),
                                   child: Text(
                                     "Movies by ${director['name']}",
-                                    style: TextStyle(
-                                      color: Theme.of(context).primaryColor,
-                                      fontSize: 20,
-                                    ),
+                                    style:
+                                        getMovieTitleTextStyle(widget.movieId),
                                   ),
                                 ),
                               ),
                               FutureBuilder(
-                                future:
-                                    _fetchOtherMoviesByDirector(director['id']),
+                                future: fetchOtherMoviesByDirector(
+                                    director['id'], region),
                                 builder: (context, snapshot) {
                                   if (snapshot.connectionState ==
                                       ConnectionState.waiting) {
@@ -1038,7 +964,7 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                                                               ? DecorationImage(
                                                                   image:
                                                                       CachedNetworkImageProvider(
-                                                                    'https://image.tmdb.org/t/p/w200${movie['poster_path']}',
+                                                                    '${getImageBaseUrl(region)}/t/p/w200${movie['poster_path']}',
                                                                   ),
                                                                   fit: BoxFit
                                                                       .cover,
@@ -1089,10 +1015,7 @@ class _MovieDetailPageState extends State<MovieDetailPage> {
                         collapsedIconColor: Theme.of(context).primaryColor,
                         title: Text(
                           'Other Info',
-                          style: TextStyle(
-                            color: Theme.of(context).primaryColor,
-                            fontSize: 20,
-                          ),
+                          style: getMovieTitleTextStyle(widget.movieId),
                         ),
                         children: [
                           Padding(
