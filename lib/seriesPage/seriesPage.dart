@@ -1,20 +1,22 @@
 import 'dart:io';
 import 'dart:ui';
 
-import 'package:Mirarr/seriesPage/function/fetch_series_by_genre.dart';
+import 'package:Mirarr/functions/fetchers/fetch_popular_series.dart';
+import 'package:Mirarr/functions/fetchers/fetch_trending_series.dart';
+import 'package:Mirarr/functions/fetchers/fetch_series_by_genre.dart';
+import 'package:Mirarr/functions/regionprovider_class.dart';
 import 'package:Mirarr/seriesPage/function/on_tap_gridview_serie.dart';
 import 'package:Mirarr/seriesPage/function/on_tap_serie.dart';
 import 'package:Mirarr/seriesPage/function/on_tap_serie_desktop.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart';
 import 'package:Mirarr/seriesPage/models/serie.dart';
 import 'dart:async';
 import 'package:Mirarr/seriesPage/UI/customSeriesWidget.dart';
 import 'package:Mirarr/widgets/bottom_bar.dart';
+import 'package:provider/provider.dart';
 
 class SerieSearchScreen extends StatefulWidget {
   static final GlobalKey<_SerieSearchScreenState> movieSearchKey =
@@ -34,75 +36,40 @@ class _SerieSearchScreenState extends State<SerieSearchScreen> {
   Map<int, List<Serie>> seriesByGenre = {};
 
   Future<void> _fetchGenresAndSeries() async {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
     try {
-      genres = await fetchGenres();
+      genres = await fetchGenres(region);
       for (var genre in genres) {
-        final series = await fetchSeriesByGenre(genre.id);
+        final series = await fetchSeriesByGenre(genre.id, region);
         setState(() {
           seriesByGenre[genre.id] = series;
         });
       }
     } catch (e) {
-      // Handle error
+      throw Exception('Failed to load series by genre');
     }
   }
 
-  // Fetch trending Series
-  Future<void> fetchTrendingSeries() async {
-    final response = await http.get(
-      Uri.parse(
-        'https://api.themoviedb.org/3/trending/tv/day?api_key=$apiKey',
-      ),
-    );
-
-    if (response.statusCode == 200) {
-      final List<Serie> series = [];
-      final List<dynamic> results = json.decode(response.body)['results'];
-
-      for (var result in results) {
-        final serie = Serie(
-            name: result['name'],
-            posterPath: result['poster_path'] ?? '',
-            overView: result['overview'] ?? '',
-            id: result['id'],
-            score: result['vote_average'] ?? '');
-        series.add(serie);
-      }
-
+  Future<void> _fetchTrendingSeries() async {
+    try {
+      final region =
+          Provider.of<RegionProvider>(context, listen: false).currentRegion;
+      trendingSeries = await fetchTrendingSeries(region);
       setState(() {
-        trendingSeries = series;
+        trendingSeries = trendingSeries;
       });
-    } else {
+    } catch (e) {
       throw Exception('Failed to load trending series data');
     }
   }
 
-// Fetch popular series
-  Future<void> fetchPopularSeries() async {
-    final response = await http.get(
-      Uri.parse(
-        'https://api.themoviedb.org/3/tv/popular?api_key=$apiKey',
-      ),
-    );
-
-    if (response.statusCode == 200) {
-      final List<Serie> series = [];
-      final List<dynamic> results = json.decode(response.body)['results'];
-
-      for (var result in results) {
-        final serie = Serie(
-            name: result['name'],
-            posterPath: result['poster_path'] ?? '',
-            overView: result['overview'] ?? '',
-            id: result['id'],
-            score: result['vote_average'] ?? '');
-        series.add(serie);
-      }
-
-      setState(() {
-        popularSeries = series;
-      });
-    } else {
+  Future<void> _fetchPopularSeries() async {
+    try {
+      final region =
+          Provider.of<RegionProvider>(context, listen: false).currentRegion;
+      popularSeries = await fetchPopularSeries(region);
+    } catch (e) {
       throw Exception('Failed to load popular series data');
     }
   }
@@ -160,6 +127,20 @@ class _SerieSearchScreenState extends State<SerieSearchScreen> {
   void initState() {
     super.initState();
     checkInternetAndFetchData();
+
+    // Add listener for region changes
+    Provider.of<RegionProvider>(context, listen: false).addListener(() {
+      checkInternetAndFetchData();
+    });
+  }
+
+  @override
+  void dispose() {
+    // Remove listener when disposing
+    Provider.of<RegionProvider>(context, listen: false).removeListener(() {
+      checkInternetAndFetchData();
+    });
+    super.dispose();
   }
 
   Future<void> checkInternetAndFetchData() async {
@@ -169,8 +150,8 @@ class _SerieSearchScreenState extends State<SerieSearchScreen> {
       handleNetworkError(ClientException('No internet connection'));
     } else {
       // Internet connection available, fetch data
-      fetchTrendingSeries();
-      fetchPopularSeries();
+      _fetchTrendingSeries();
+      _fetchPopularSeries();
       await _fetchGenresAndSeries();
     }
   }
