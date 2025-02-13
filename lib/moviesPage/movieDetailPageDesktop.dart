@@ -1,13 +1,18 @@
 import 'dart:io';
 import 'dart:ui';
 
+import 'package:Mirarr/functions/fetchers/fetch_movie_credits.dart';
+import 'package:Mirarr/functions/fetchers/fetch_movie_details.dart';
+import 'package:Mirarr/functions/fetchers/fetch_other_movies_by_director.dart';
+import 'package:Mirarr/functions/get_base_url.dart';
+import 'package:Mirarr/functions/regionprovider_class.dart';
+import 'package:Mirarr/moviesPage/checkers/custom_tmdb_ids_effects.dart';
 import 'package:Mirarr/moviesPage/functions/get_imdb_rating.dart';
 import 'package:Mirarr/moviesPage/functions/movie_tmdb_actions.dart';
 import 'package:Mirarr/moviesPage/functions/on_tap_movie_desktop.dart';
 import 'package:Mirarr/moviesPage/functions/torrent_links.dart';
 import 'package:Mirarr/moviesPage/movieDetailPage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:http/http.dart' as http;
@@ -21,6 +26,7 @@ import 'package:Mirarr/widgets/custom_divider.dart';
 import 'package:Mirarr/widgets/image_gallery_page.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:Mirarr/moviesPage/functions/watch_links.dart';
+import 'package:provider/provider.dart';
 
 class MovieDetailPageDesktop extends StatefulWidget {
   final String movieTitle;
@@ -70,11 +76,12 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
   void initState() {
     super.initState();
     checkUserLogin();
-    fetchMovieDetails();
+    _fetchMovieDetails();
     checkAccountState();
     _loadMovieImages();
-
-    fetchCredits(widget.movieId);
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    fetchCredits(widget.movieId, region);
   }
 
   void onTapMovie(String movieTitle, int movieId) {
@@ -85,37 +92,6 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
             MovieDetailPage(movieTitle: movieTitle, movieId: movieId),
       ),
     );
-  }
-
-  Future<List<dynamic>> _fetchOtherMoviesByDirector(int castId) async {
-    final response = await http.get(
-      Uri.parse(
-          'https://api.themoviedb.org/3/person/$castId/movie_credits?api_key=$apiKey'),
-    );
-    if (response.statusCode == 200) {
-      final decoded = json.decode(response.body);
-      final List<dynamic> movies = decoded['crew'];
-
-      Set<int> movieIds = {};
-
-      List<dynamic> filteredMovies = [];
-
-      for (var movie in movies) {
-        // Check if the crew member's job is "Director"
-        if (movie['job'] == 'Director') {
-          // Add the movie only if it has a poster path and not already added
-          if (movie['poster_path'] != null &&
-              movie['poster_path'] != '' &&
-              !movieIds.contains(movie['id'])) {
-            filteredMovies.add(movie);
-            movieIds.add(movie['id']);
-          }
-        }
-      }
-      return filteredMovies;
-    } else {
-      throw Exception('Failed to load other movies');
-    }
   }
 
   void _loadMovieImages() {
@@ -144,10 +120,12 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
   Future<void> checkAccountState() async {
     final openbox = await Hive.openBox('sessionBox');
     final sessionId = openbox.get('sessionData');
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    final baseUrl = getBaseUrl(region);
     final response = await http.get(
       Uri.parse(
-        'https://api.themoviedb.org/3/movie/${widget.movieId}/account_states?api_key=$apiKey&session_id=$sessionId',
-      ),
+          '${baseUrl}movie/${widget.movieId}/account_states?api_key=$apiKey&session_id=$sessionId'),
     );
 
     if (response.statusCode == 200) {
@@ -164,9 +142,11 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
   }
 
   Future<List<String>> _fetchMovieImages(int movieId) async {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    final baseUrl = getBaseUrl(region);
     final response = await http.get(
-      Uri.parse(
-          'https://api.themoviedb.org/3/movie/$movieId/images?api_key=$apiKey'),
+      Uri.parse('${baseUrl}movie/$movieId/images?api_key=$apiKey'),
     );
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body)['backdrops'];
@@ -188,88 +168,41 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
     });
   }
 
-  Future<void> fetchMovieDetails() async {
+  Future<void> _fetchMovieDetails() async {
     try {
-      // Make an HTTP GET request to fetch movie details from the first API
-      final response = await http.get(
-        Uri.parse(
-          'https://api.themoviedb.org/3/movie/${widget.movieId}?api_key=$apiKey',
-        ),
-      );
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        setState(() {
-          moviedetails = responseData;
-          budget = responseData['budget'];
-          revenue = responseData['revenue'];
-          genres = responseData['genres'];
-          backdrops = responseData['backdrop_path'];
-          posterPath = responseData['poster_path'];
-          score = responseData['vote_average'];
-          about = responseData['overview'];
-          duration = responseData['runtime'];
-          releaseDate = responseData['release_date'];
-          language = responseData['original_language'];
-          productionCountries = responseData['production_countries'];
-          productionCompanies = responseData['production_companies'];
-          spokenLanguages = responseData['spoken_languages'];
-          imdbId = responseData['imdb_id'];
-        });
-        if (imdbId != null) {
-          await getMovieRatings(
-              imdbId, updateImdbRating, updateRottenTomatoesRating);
-        }
-      } else {
-        throw Exception('Failed to load movie details');
+      final region =
+          Provider.of<RegionProvider>(context, listen: false).currentRegion;
+      final responseData = await fetchMovieDetails(widget.movieId, region);
+      setState(() {
+        moviedetails = responseData;
+        budget = responseData['budget'];
+        revenue = responseData['revenue'];
+        genres = responseData['genres'];
+        backdrops = responseData['backdrop_path'];
+        score = responseData['vote_average'];
+        about = responseData['overview'];
+        duration = responseData['runtime'];
+        releaseDate = responseData['release_date'];
+        language = responseData['original_language'];
+        posterPath = responseData['poster_path'];
+        productionCountries = responseData['production_countries'];
+        productionCompanies = responseData['production_companies'];
+        spokenLanguages = responseData['spoken_languages'];
+        imdbId = responseData['imdb_id'];
+      });
+      if (imdbId != null) {
+        await getMovieRatings(
+            imdbId, updateImdbRating, updateRottenTomatoesRating);
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error: $e');
-      }
-    }
-  }
-
-  Future<Map<String, List<Map<String, dynamic>>>> fetchCredits(
-      int movieId) async {
-    try {
-      final response = await http.get(
-        Uri.parse(
-          'https://api.themoviedb.org/3/movie/$movieId/credits?api_key=$apiKey',
-        ),
-      );
-
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        final List<dynamic> castList = responseData['cast'];
-        final List<Map<String, dynamic>> allCastList =
-            castList.cast<Map<String, dynamic>>().toList();
-
-        // Fetch director details
-        final List<dynamic> crewList = responseData['crew'];
-        final List<Map<String, dynamic>> allCrewList =
-            crewList.cast<Map<String, dynamic>>().toList();
-
-        return {
-          'cast': allCastList,
-          'crew': allCrewList,
-        };
-      } else {
-        throw Exception('Failed to load cast and crew details');
-      }
-    } catch (e) {
-      if (kDebugMode) {
-        print('Error: $e');
-      }
-      return {
-        'cast': [],
-        'crew': [],
-      };
+      throw Exception('Failed to load movie details');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
     int? hours = duration != null ? duration! ~/ 60 : null;
     int? minutes = duration != null ? duration! % 60 : null;
     String year = releaseDate != null && releaseDate!.isNotEmpty
@@ -279,7 +212,7 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
       appBar: Platform.isLinux || Platform.isWindows || Platform.isMacOS
           ? AppBar(
               toolbarHeight: 40,
-              backgroundColor: Theme.of(context).primaryColor,
+              backgroundColor: getMovieColor(context, widget.movieId),
               iconTheme: const IconThemeData(color: Colors.black),
               actions: [
                 Padding(
@@ -315,116 +248,69 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                       decoration: BoxDecoration(
                         image: DecorationImage(
                             image: CachedNetworkImageProvider(
-                                'https://image.tmdb.org/t/p/original$backdrops'),
+                                '${getImageBaseUrl(region)}/t/p/w500$backdrops'),
                             fit: BoxFit.fitWidth,
                             opacity: 0.5),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            CachedNetworkImage(
-                              imageUrl:
-                                  'https://image.tmdb.org/t/p/original$posterPath',
-                              placeholder: (context, url) => const Center(
-                                  child: CircularProgressIndicator()),
-                              errorWidget: (context, url, error) =>
-                                  const Icon(Icons.error),
-                              imageBuilder: (context, imageProvider) =>
-                                  Container(
-                                height: 800,
-                                width: 600,
-                                decoration: BoxDecoration(
-                                  borderRadius: const BorderRadius.all(
-                                      Radius.circular(20)),
-                                  image: DecorationImage(
-                                    fit: BoxFit.cover,
-                                    image: imageProvider,
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              CachedNetworkImage(
+                                imageUrl:
+                                    '${getImageBaseUrl(region)}/t/p/w500$posterPath',
+                                placeholder: (context, url) => const Center(
+                                    child: CircularProgressIndicator()),
+                                errorWidget: (context, url, error) =>
+                                    const Icon(Icons.error),
+                                imageBuilder: (context, imageProvider) =>
+                                    Container(
+                                  height: 800,
+                                  width: 600,
+                                  decoration: BoxDecoration(
+                                    borderRadius: const BorderRadius.all(
+                                        Radius.circular(20)),
+                                    image: DecorationImage(
+                                      fit: BoxFit.cover,
+                                      image: imageProvider,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            Column(
-                              mainAxisAlignment: MainAxisAlignment.start,
-                              children: [
-                                Container(
-                                  decoration: const BoxDecoration(
-                                    borderRadius:
-                                        BorderRadius.all(Radius.circular(20)),
-                                  ),
-                                  child: Text(
-                                    widget.movieTitle,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    decoration: const BoxDecoration(
+                                      borderRadius:
+                                          BorderRadius.all(Radius.circular(20)),
                                     ),
+                                    child: Text(widget.movieTitle,
+                                        style: getMovieTitleTextStyle(
+                                            widget.movieId)),
                                   ),
-                                ),
-                                Row(
-                                  children: [
-                                    IconButton(
-                                      onPressed: () {
-                                        _castImagesFuture.then((imageUrls) {
-                                          _openImageGallery(imageUrls);
-                                        });
-                                      },
-                                      icon: const Icon(
-                                        Icons.image_rounded,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                    Visibility(
-                                      visible: isUserLoggedIn == true,
-                                      child: GestureDetector(
-                                        onTap: () async {
-                                          if (isMovieWatchlist == null) {
-                                            return;
-                                          }
-                                          final movieId = widget.movieId;
-                                          final openbox =
-                                              await Hive.openBox('sessionBox');
-                                          final String accountId =
-                                              openbox.get('accountId');
-                                          final String sessionData =
-                                              openbox.get('sessionData');
-                                          if (isMovieWatchlist!) {
-                                            // Remove from watchlist
-                                            removeFromWatchList(accountId,
-                                                sessionData, movieId, context);
-                                            setState(() {
-                                              isMovieWatchlist = false;
-                                            });
-                                          } else {
-                                            // Add to watchlist
-                                            addWatchList(accountId, sessionData,
-                                                movieId, context);
-                                            setState(() {
-                                              isMovieWatchlist = true;
-                                            });
-                                          }
+                                  Row(
+                                    children: [
+                                      IconButton(
+                                        onPressed: () {
+                                          _castImagesFuture.then((imageUrls) {
+                                            _openImageGallery(imageUrls);
+                                          });
                                         },
-                                        child: Icon(
-                                          isMovieWatchlist == null
-                                              ? Icons.bookmark_border
-                                              : isMovieWatchlist!
-                                                  ? Icons.bookmark
-                                                  : Icons.bookmark_border,
+                                        icon: const Icon(
+                                          Icons.image_rounded,
                                           color: Colors.white,
-                                          size: 30,
                                         ),
                                       ),
-                                    ),
-                                    Visibility(
-                                      visible: isUserLoggedIn == true,
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                            5, 0, 0, 0),
+                                      Visibility(
+                                        visible: isUserLoggedIn == true,
                                         child: GestureDetector(
                                           onTap: () async {
-                                            if (isMovieFavorite == null) {
+                                            if (isMovieWatchlist == null) {
                                               return;
                                             }
                                             final movieId = widget.movieId;
@@ -434,165 +320,102 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                                                 openbox.get('accountId');
                                             final String sessionData =
                                                 openbox.get('sessionData');
-                                            if (isMovieFavorite!) {
-                                              removeFromFavorite(
+                                            if (isMovieWatchlist!) {
+                                              // Remove from watchlist
+                                              removeFromWatchList(
                                                   accountId,
                                                   sessionData,
                                                   movieId,
                                                   context);
                                               setState(() {
-                                                isMovieFavorite = false;
+                                                isMovieWatchlist = false;
                                               });
                                             } else {
-                                              addFavorite(
+                                              // Add to watchlist
+                                              addWatchList(
                                                   accountId,
                                                   sessionData,
                                                   movieId,
                                                   context);
                                               setState(() {
-                                                isMovieFavorite = true;
+                                                isMovieWatchlist = true;
                                               });
                                             }
                                           },
                                           child: Icon(
-                                            isMovieFavorite == null
-                                                ? Icons.favorite_border
-                                                : isMovieFavorite!
-                                                    ? Icons.favorite
-                                                    : Icons.favorite_border,
+                                            isMovieWatchlist == null
+                                                ? Icons.bookmark_border
+                                                : isMovieWatchlist!
+                                                    ? Icons.bookmark
+                                                    : Icons.bookmark_border,
                                             color: Colors.white,
                                             size: 30,
                                           ),
                                         ),
                                       ),
-                                    ),
-                                    // logged in and rated
-                                    if (isUserLoggedIn == true &&
-                                        isMovieRated != false &&
-                                        userRating != null)
-                                      Container(
-                                        margin: const EdgeInsets.all(10),
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: const BoxDecoration(
-                                            color: Colors.black38,
-                                            borderRadius: BorderRadius.all(
-                                                Radius.circular(30))),
-                                        child: GestureDetector(
-                                          onTap: () => showModalBottomSheet(
-                                            context: context,
-                                            builder: (BuildContext context) {
-                                              return Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  const SizedBox(
-                                                    height: 20,
-                                                  ),
-                                                  Padding(
-                                                    padding:
-                                                        const EdgeInsets.all(
-                                                            8.0),
-                                                    child: RatingBar.builder(
-                                                      initialRating:
-                                                          userRating ?? 0,
-                                                      minRating: 1,
-                                                      maxRating: 10,
-                                                      itemSize: 35,
-                                                      unratedColor: Colors.grey,
-                                                      direction:
-                                                          Axis.horizontal,
-                                                      allowHalfRating: true,
-                                                      itemCount: 10,
-                                                      itemPadding:
-                                                          const EdgeInsets
-                                                              .symmetric(
-                                                              horizontal: 0),
-                                                      itemBuilder:
-                                                          (context, _) =>
-                                                              const Icon(
-                                                        Icons.star,
-                                                        color: Colors.amber,
-                                                      ),
-                                                      onRatingUpdate:
-                                                          (rating) async {
-                                                        final movieId =
-                                                            widget.movieId;
-                                                        final openbox =
-                                                            await Hive.openBox(
-                                                                'sessionBox');
-
-                                                        final String
-                                                            sessionData =
-                                                            openbox.get(
-                                                                'sessionData');
-                                                        addRating(
-                                                            sessionData,
-                                                            movieId,
-                                                            rating,
-                                                            context);
-                                                        setState(() {
-                                                          isMovieRated != false;
-                                                          userRating = rating;
-                                                        });
-                                                      },
-                                                    ),
-                                                  ),
-                                                  const CustomDivider(),
-                                                  const SizedBox(
-                                                    height: 10,
-                                                  ),
-                                                  GestureDetector(
-                                                    onTap: () async {
-                                                      final openbox =
-                                                          await Hive.openBox(
-                                                              'sessionBox');
-
-                                                      final String sessionData =
-                                                          openbox.get(
-                                                              'sessionData');
-                                                      removeRating(
-                                                          sessionData,
-                                                          widget.movieId,
-                                                          context);
-                                                      Navigator.of(context)
-                                                          .pop();
-                                                      setState(() {
-                                                        isMovieRated = false;
-                                                        userRating = null;
-                                                      });
-                                                    },
-                                                    child: const Text(
-                                                      ' 🗑️ Delete Rating',
-                                                      style: TextStyle(
-                                                          color: Colors.white,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                          fontSize: 18),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(
-                                                    height: 20,
-                                                  ),
-                                                ],
-                                              );
+                                      Visibility(
+                                        visible: isUserLoggedIn == true,
+                                        child: Padding(
+                                          padding: const EdgeInsets.fromLTRB(
+                                              5, 0, 0, 0),
+                                          child: GestureDetector(
+                                            onTap: () async {
+                                              if (isMovieFavorite == null) {
+                                                return;
+                                              }
+                                              final movieId = widget.movieId;
+                                              final openbox =
+                                                  await Hive.openBox(
+                                                      'sessionBox');
+                                              final String accountId =
+                                                  openbox.get('accountId');
+                                              final String sessionData =
+                                                  openbox.get('sessionData');
+                                              if (isMovieFavorite!) {
+                                                removeFromFavorite(
+                                                    accountId,
+                                                    sessionData,
+                                                    movieId,
+                                                    context);
+                                                setState(() {
+                                                  isMovieFavorite = false;
+                                                });
+                                              } else {
+                                                addFavorite(
+                                                    accountId,
+                                                    sessionData,
+                                                    movieId,
+                                                    context);
+                                                setState(() {
+                                                  isMovieFavorite = true;
+                                                });
+                                              }
                                             },
-                                          ),
-                                          child: Text(
-                                            '👤 ${userRating?.toStringAsFixed(1)}',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w300,
-                                              fontSize: 13,
+                                            child: Icon(
+                                              isMovieFavorite == null
+                                                  ? Icons.favorite_border
+                                                  : isMovieFavorite!
+                                                      ? Icons.favorite
+                                                      : Icons.favorite_border,
                                               color: Colors.white,
+                                              size: 30,
                                             ),
                                           ),
                                         ),
                                       ),
-                                    //logged in not rated
-                                    if (isUserLoggedIn == true &&
-                                        isMovieRated == false &&
-                                        userRating == null)
-                                      IconButton(
-                                          onPressed: () {
-                                            showModalBottomSheet(
+                                      // logged in and rated
+                                      if (isUserLoggedIn == true &&
+                                          isMovieRated != false &&
+                                          userRating != null)
+                                        Container(
+                                          margin: const EdgeInsets.all(10),
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: const BoxDecoration(
+                                              color: Colors.black38,
+                                              borderRadius: BorderRadius.all(
+                                                  Radius.circular(30))),
+                                          child: GestureDetector(
+                                            onTap: () => showModalBottomSheet(
                                               context: context,
                                               builder: (BuildContext context) {
                                                 return Column(
@@ -602,30 +425,63 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                                                     const SizedBox(
                                                       height: 20,
                                                     ),
-                                                    RatingBar.builder(
-                                                      initialRating: 5,
-                                                      minRating: 1,
-                                                      maxRating: 10,
-                                                      itemSize: 35,
-                                                      unratedColor: Colors.grey,
-                                                      direction:
-                                                          Axis.horizontal,
-                                                      allowHalfRating: true,
-                                                      itemCount: 10,
-                                                      itemPadding:
-                                                          const EdgeInsets
-                                                              .symmetric(
-                                                              horizontal: 0),
-                                                      itemBuilder:
-                                                          (context, _) =>
-                                                              const Icon(
-                                                        Icons.star,
-                                                        color: Colors.amber,
+                                                    Padding(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                              8.0),
+                                                      child: RatingBar.builder(
+                                                        initialRating:
+                                                            userRating ?? 0,
+                                                        minRating: 1,
+                                                        maxRating: 10,
+                                                        itemSize: 35,
+                                                        unratedColor:
+                                                            Colors.grey,
+                                                        direction:
+                                                            Axis.horizontal,
+                                                        allowHalfRating: true,
+                                                        itemCount: 10,
+                                                        itemPadding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                                horizontal: 0),
+                                                        itemBuilder:
+                                                            (context, _) =>
+                                                                const Icon(
+                                                          Icons.star,
+                                                          color: Colors.amber,
+                                                        ),
+                                                        onRatingUpdate:
+                                                            (rating) async {
+                                                          final movieId =
+                                                              widget.movieId;
+                                                          final openbox =
+                                                              await Hive.openBox(
+                                                                  'sessionBox');
+
+                                                          final String
+                                                              sessionData =
+                                                              openbox.get(
+                                                                  'sessionData');
+                                                          addRating(
+                                                              sessionData,
+                                                              movieId,
+                                                              rating,
+                                                              context);
+                                                          setState(() {
+                                                            isMovieRated !=
+                                                                false;
+                                                            userRating = rating;
+                                                          });
+                                                        },
                                                       ),
-                                                      onRatingUpdate:
-                                                          (rating) async {
-                                                        final movieId =
-                                                            widget.movieId;
+                                                    ),
+                                                    const CustomDivider(),
+                                                    const SizedBox(
+                                                      height: 10,
+                                                    ),
+                                                    GestureDetector(
+                                                      onTap: () async {
                                                         final openbox =
                                                             await Hive.openBox(
                                                                 'sessionBox');
@@ -634,344 +490,439 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                                                             sessionData =
                                                             openbox.get(
                                                                 'sessionData');
-                                                        addRating(
+                                                        removeRating(
                                                             sessionData,
-                                                            movieId,
-                                                            rating,
+                                                            widget.movieId,
                                                             context);
+                                                        Navigator.of(context)
+                                                            .pop();
                                                         setState(() {
-                                                          isMovieRated =
-                                                              '"value":$rating';
-                                                          userRating = rating;
+                                                          isMovieRated = false;
+                                                          userRating = null;
                                                         });
                                                       },
+                                                      child: const Text(
+                                                        ' 🗑️ Delete Rating',
+                                                        style: TextStyle(
+                                                            color: Colors.white,
+                                                            fontWeight:
+                                                                FontWeight.bold,
+                                                            fontSize: 18),
+                                                      ),
                                                     ),
                                                     const SizedBox(
-                                                      height: 40,
+                                                      height: 20,
                                                     ),
                                                   ],
                                                 );
                                               },
-                                            );
-                                          },
-                                          icon: const Icon(
-                                            Icons.add_reaction,
-                                            color: Colors.white,
-                                          )),
-                                    Container(
-                                      margin: const EdgeInsets.all(5),
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: const BoxDecoration(
-                                          color: Colors.black38,
-                                          borderRadius: BorderRadius.all(
-                                              Radius.circular(30))),
-                                      child: Text(
-                                        '⭐ ${score?.toStringAsFixed(1)}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w300,
-                                          fontSize: 13,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ),
-                                    Visibility(
-                                      visible: imdbRating != null &&
-                                          imdbRating!.isNotEmpty,
-                                      child: Container(
-                                        margin: const EdgeInsets.all(5),
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: const BoxDecoration(
-                                            color: Colors.black38,
-                                            borderRadius: BorderRadius.all(
-                                                Radius.circular(30))),
-                                        child: Text(
-                                          'IMDB⭐ $imdbRating',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w300,
-                                            fontSize: 13,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    Visibility(
-                                      visible: rottenTomatoesRating != 'N/A',
-                                      child: Container(
-                                        margin: const EdgeInsets.all(5),
-                                        padding: const EdgeInsets.all(10),
-                                        decoration: const BoxDecoration(
-                                            color: Colors.black38,
-                                            borderRadius: BorderRadius.all(
-                                                Radius.circular(30))),
-                                        child: Text(
-                                          'Rotten Tomatoes🍅 $rottenTomatoesRating',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w300,
-                                            fontSize: 13,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-
-                                    Center(
-                                      child: SingleChildScrollView(
-                                        scrollDirection: Axis.horizontal,
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.center,
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: (genres as List<dynamic>)
-                                              .map<Widget>((genre) {
-                                            return Text(
-                                              genre['name'] + ' | ',
+                                            ),
+                                            child: Text(
+                                              '👤 ${userRating?.toStringAsFixed(1)}',
                                               style: const TextStyle(
-                                                  fontSize: 14,
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.w200),
-                                            );
-                                          }).toList(),
+                                                fontWeight: FontWeight.w300,
+                                                fontSize: 13,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(25, 10, 25, 10),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Center(
-                                        child: FutureBuilder(
-                                            future: checkAvailability(
-                                                widget.movieId),
-                                            builder: (context, snapshot) {
-                                              if (snapshot.connectionState ==
-                                                  ConnectionState.waiting) {
-                                                // Display loading indicator while fetching data
-                                                return const SizedBox();
-                                              } else if (snapshot.hasError) {
-                                                // Display error message if fetching data fails
-                                                return const Text(
-                                                    'Error loading data');
-                                              } else {
-                                                // Display check mark if results are not empty
-                                                return snapshot.data == true
-                                                    ? SizedBox(
-                                                        width: 400,
-                                                        child:
-                                                            FloatingActionButton(
-                                                          backgroundColor:
-                                                              Theme.of(context)
-                                                                  .primaryColor,
-                                                          onPressed: () =>
-                                                              showWatchOptions(
-                                                                  context,
-                                                                  widget
-                                                                      .movieId),
-                                                          child: const Text(
-                                                            'Watch',
-                                                            style: TextStyle(
-                                                                color: Colors
-                                                                    .black,
-                                                                fontSize: 20,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .bold),
-                                                          ),
+                                      //logged in not rated
+                                      if (isUserLoggedIn == true &&
+                                          isMovieRated == false &&
+                                          userRating == null)
+                                        IconButton(
+                                            onPressed: () {
+                                              showModalBottomSheet(
+                                                context: context,
+                                                builder:
+                                                    (BuildContext context) {
+                                                  return Column(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      const SizedBox(
+                                                        height: 20,
+                                                      ),
+                                                      RatingBar.builder(
+                                                        initialRating: 5,
+                                                        minRating: 1,
+                                                        maxRating: 10,
+                                                        itemSize: 35,
+                                                        unratedColor:
+                                                            Colors.grey,
+                                                        direction:
+                                                            Axis.horizontal,
+                                                        allowHalfRating: true,
+                                                        itemCount: 10,
+                                                        itemPadding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                                horizontal: 0),
+                                                        itemBuilder:
+                                                            (context, _) =>
+                                                                const Icon(
+                                                          Icons.star,
+                                                          color: Colors.amber,
                                                         ),
-                                                      )
-                                                    : const SizedBox();
-                                              }
-                                            }),
+                                                        onRatingUpdate:
+                                                            (rating) async {
+                                                          final movieId =
+                                                              widget.movieId;
+                                                          final openbox =
+                                                              await Hive.openBox(
+                                                                  'sessionBox');
+
+                                                          final String
+                                                              sessionData =
+                                                              openbox.get(
+                                                                  'sessionData');
+                                                          addRating(
+                                                              sessionData,
+                                                              movieId,
+                                                              rating,
+                                                              context);
+                                                          setState(() {
+                                                            isMovieRated =
+                                                                '"value":$rating';
+                                                            userRating = rating;
+                                                          });
+                                                        },
+                                                      ),
+                                                      const SizedBox(
+                                                        height: 40,
+                                                      ),
+                                                    ],
+                                                  );
+                                                },
+                                              );
+                                            },
+                                            icon: const Icon(
+                                              Icons.add_reaction,
+                                              color: Colors.white,
+                                            )),
+                                      Container(
+                                        margin: const EdgeInsets.all(5),
+                                        padding: const EdgeInsets.all(10),
+                                        decoration: const BoxDecoration(
+                                            color: Colors.black38,
+                                            borderRadius: BorderRadius.all(
+                                                Radius.circular(30))),
+                                        child: Text(
+                                          '⭐ ${score?.toStringAsFixed(1)}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w300,
+                                            fontSize: 13,
+                                            color: Colors.white,
+                                          ),
+                                        ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(25, 10, 25, 0),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
+                                      Visibility(
+                                        visible: imdbRating != null &&
+                                            imdbRating!.isNotEmpty,
+                                        child: Container(
+                                          margin: const EdgeInsets.all(5),
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: const BoxDecoration(
+                                              color: Colors.black38,
+                                              borderRadius: BorderRadius.all(
+                                                  Radius.circular(30))),
+                                          child: Text(
+                                            'IMDB⭐ $imdbRating',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w300,
+                                              fontSize: 13,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      Visibility(
+                                        visible: rottenTomatoesRating != 'N/A',
+                                        child: Container(
+                                          margin: const EdgeInsets.all(5),
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: const BoxDecoration(
+                                              color: Colors.black38,
+                                              borderRadius: BorderRadius.all(
+                                                  Radius.circular(30))),
+                                          child: Text(
+                                            'Rotten Tomatoes🍅 $rottenTomatoesRating',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w300,
+                                              fontSize: 13,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+
                                       Center(
-                                          child: SizedBox(
-                                        width: 400,
-                                        child: FloatingActionButton(
-                                          backgroundColor:
-                                              Theme.of(context).primaryColor,
-                                          onPressed: () => showTorrentOptions(
-                                              context,
-                                              widget.movieId,
-                                              widget.movieTitle,
-                                              releaseDate,
-                                              imdbId),
-                                          child: const Text(
-                                            'Torrent Search',
-                                            style: TextStyle(
-                                                color: Colors.black,
-                                                fontSize: 20,
-                                                fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                      ))
-                                    ],
-                                  ),
-                                ),
-                                const CustomDivider(),
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(20, 0, 20, 0),
-                                  child: Container(
-                                      width: 600,
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        about!,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w300,
-                                        ),
-                                        textAlign: TextAlign.justify,
-                                      )),
-                                ),
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(0, 20, 0, 0),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      SizedBox(
-                                        width: 110,
-                                        child: Container(
-                                          padding: const EdgeInsets.fromLTRB(
-                                              5, 5, 5, 5),
-                                          margin: const EdgeInsets.fromLTRB(
-                                              5, 5, 5, 5),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.withOpacity(0.2),
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              const Text(
-                                                'Duration',
-                                                style: TextStyle(
-                                                  color: Colors.white70,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w200,
-                                                ),
-                                              ),
-                                              Padding(
-                                                padding:
-                                                    const EdgeInsets.all(8.0),
-                                                child: Text(
-                                                  "${hours}H ${minutes}M",
-                                                  style: const TextStyle(
+                                        child: SingleChildScrollView(
+                                          scrollDirection: Axis.horizontal,
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: (genres as List<dynamic>)
+                                                .map<Widget>((genre) {
+                                              return Text(
+                                                genre['name'] + ' | ',
+                                                style: const TextStyle(
+                                                    fontSize: 14,
                                                     color: Colors.white,
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 110,
-                                        child: Container(
-                                          padding: const EdgeInsets.fromLTRB(
-                                              5, 5, 5, 5),
-                                          margin: const EdgeInsets.fromLTRB(
-                                              5, 5, 5, 5),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.withOpacity(0.2),
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              const Text(
-                                                'Year',
-                                                style: TextStyle(
-                                                  color: Colors.white70,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w200,
-                                                ),
-                                              ),
-                                              Padding(
-                                                padding:
-                                                    const EdgeInsets.all(8.0),
-                                                child: Text(
-                                                  year,
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                      SizedBox(
-                                        width: 110,
-                                        child: Container(
-                                          padding: const EdgeInsets.fromLTRB(
-                                              5, 5, 5, 5),
-                                          margin: const EdgeInsets.fromLTRB(
-                                              5, 5, 5, 5),
-                                          decoration: BoxDecoration(
-                                            color: Colors.grey.withOpacity(0.2),
-                                            borderRadius:
-                                                BorderRadius.circular(10),
-                                          ),
-                                          child: Column(
-                                            children: [
-                                              const Text(
-                                                'Language',
-                                                style: TextStyle(
-                                                  color: Colors.white70,
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w200,
-                                                ),
-                                              ),
-                                              Padding(
-                                                padding:
-                                                    const EdgeInsets.all(8.0),
-                                                child: Text(
-                                                  language != null
-                                                      ? language!.toUpperCase()
-                                                      : 'N/A',
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontSize: 18,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
+                                                    fontWeight:
+                                                        FontWeight.w200),
+                                              );
+                                            }).toList(),
                                           ),
                                         ),
                                       ),
                                     ],
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        25, 10, 25, 10),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Center(
+                                          child: FutureBuilder(
+                                              future: checkAvailability(
+                                                  widget.movieId, region),
+                                              builder: (context, snapshot) {
+                                                if (snapshot.connectionState ==
+                                                    ConnectionState.waiting) {
+                                                  // Display loading indicator while fetching data
+                                                  return const SizedBox();
+                                                } else if (snapshot.hasError) {
+                                                  // Display error message if fetching data fails
+                                                  return const Text(
+                                                      'Error loading data');
+                                                } else {
+                                                  // Display check mark if results are not empty
+                                                  return snapshot.data == true
+                                                      ? SizedBox(
+                                                          width: 400,
+                                                          child:
+                                                              FloatingActionButton(
+                                                            backgroundColor:
+                                                                getMovieColor(
+                                                                    context,
+                                                                    widget
+                                                                        .movieId),
+                                                            onPressed: () =>
+                                                                showWatchOptions(
+                                                                    context,
+                                                                    widget
+                                                                        .movieId,
+                                                                    widget
+                                                                        .movieTitle,
+                                                                    releaseDate ??
+                                                                        '',
+                                                                    imdbId ??
+                                                                        ''),
+                                                            child: Text('Watch',
+                                                                style: getMovieButtonTextStyle(
+                                                                    widget
+                                                                        .movieId)),
+                                                          ))
+                                                      : const SizedBox();
+                                                }
+                                              }),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        25, 10, 25, 0),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Center(
+                                            child: SizedBox(
+                                          width: 400,
+                                          child: FloatingActionButton(
+                                            backgroundColor: getMovieColor(
+                                                context, widget.movieId),
+                                            onPressed: () => showTorrentOptions(
+                                                context,
+                                                widget.movieId,
+                                                widget.movieTitle,
+                                                releaseDate,
+                                                imdbId),
+                                            child: Text(
+                                              'Torrent Search',
+                                              style: getMovieButtonTextStyle(
+                                                  widget.movieId),
+                                            ),
+                                          ),
+                                        ))
+                                      ],
+                                    ),
+                                  ),
+                                  const CustomDivider(),
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(20, 0, 20, 0),
+                                    child: Container(
+                                        width: 600,
+                                        alignment: Alignment.center,
+                                        child: Text(
+                                          about!,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w300,
+                                          ),
+                                          textAlign: TextAlign.justify,
+                                        )),
+                                  ),
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(0, 20, 0, 0),
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        SizedBox(
+                                          width: 110,
+                                          child: Container(
+                                            padding: const EdgeInsets.fromLTRB(
+                                                5, 5, 5, 5),
+                                            margin: const EdgeInsets.fromLTRB(
+                                                5, 5, 5, 5),
+                                            decoration: BoxDecoration(
+                                              color: getMovieBackgroundColor(
+                                                  context, widget.movieId),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                const Text(
+                                                  'Duration',
+                                                  style: TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w200,
+                                                  ),
+                                                ),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(8.0),
+                                                  child: Text(
+                                                    "${hours}H ${minutes}M",
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 110,
+                                          child: Container(
+                                            padding: const EdgeInsets.fromLTRB(
+                                                5, 5, 5, 5),
+                                            margin: const EdgeInsets.fromLTRB(
+                                                5, 5, 5, 5),
+                                            decoration: BoxDecoration(
+                                              color: getMovieBackgroundColor(
+                                                  context, widget.movieId),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                const Text(
+                                                  'Year',
+                                                  style: TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w200,
+                                                  ),
+                                                ),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(8.0),
+                                                  child: Text(
+                                                    year,
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        SizedBox(
+                                          width: 110,
+                                          child: Container(
+                                            padding: const EdgeInsets.fromLTRB(
+                                                5, 5, 5, 5),
+                                            margin: const EdgeInsets.fromLTRB(
+                                                5, 5, 5, 5),
+                                            decoration: BoxDecoration(
+                                              color: getMovieBackgroundColor(
+                                                  context, widget.movieId),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                const Text(
+                                                  'Language',
+                                                  style: TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w200,
+                                                  ),
+                                                ),
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(8.0),
+                                                  child: Text(
+                                                    language != null
+                                                        ? language!
+                                                            .toUpperCase()
+                                                        : 'N/A',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 18,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
                     FutureBuilder(
-                      future: fetchCredits(widget.movieId),
+                      future: fetchCredits(widget.movieId, region),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
@@ -999,13 +950,8 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                                     child: Text(
                                       'Cast',
                                       textAlign: TextAlign.justify,
-                                      style: TextStyle(
-                                          color: Theme.of(context).primaryColor,
-                                          fontSize: Platform.isAndroid ||
-                                                  Platform.isIOS
-                                              ? 18
-                                              : 30,
-                                          fontWeight: FontWeight.w700),
+                                      style: getMovieTitleTextStyle(
+                                          widget.movieId),
                                     ),
                                   )
                                 ],
@@ -1020,13 +966,8 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                                     child: Text(
                                       'Crew',
                                       textAlign: TextAlign.justify,
-                                      style: TextStyle(
-                                          color: Theme.of(context).primaryColor,
-                                          fontSize: Platform.isAndroid ||
-                                                  Platform.isIOS
-                                              ? 18
-                                              : 30,
-                                          fontWeight: FontWeight.w700),
+                                      style: getMovieTitleTextStyle(
+                                          widget.movieId),
                                     ),
                                   ),
                                 ],
@@ -1040,7 +981,7 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                     ),
                     const CustomDivider(),
                     FutureBuilder(
-                      future: fetchCredits(widget.movieId),
+                      future: fetchCredits(widget.movieId, region),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
@@ -1074,18 +1015,14 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                                   child: Padding(
                                     padding:
                                         const EdgeInsets.fromLTRB(25, 10, 0, 0),
-                                    child: Text(
-                                      "Movies by ${director['name']}",
-                                      style: TextStyle(
-                                        color: Theme.of(context).primaryColor,
-                                        fontSize: 20,
-                                      ),
-                                    ),
+                                    child: Text("Movies by ${director['name']}",
+                                        style: getMovieTitleTextStyle(
+                                            widget.movieId)),
                                   ),
                                 ),
                                 FutureBuilder(
-                                  future: _fetchOtherMoviesByDirector(
-                                      director['id']),
+                                  future: fetchOtherMoviesByDirector(
+                                      director['id'], region),
                                   builder: (context, snapshot) {
                                     if (snapshot.connectionState ==
                                         ConnectionState.waiting) {
@@ -1135,7 +1072,7 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                                                                 ? DecorationImage(
                                                                     image:
                                                                         CachedNetworkImageProvider(
-                                                                      'https://image.tmdb.org/t/p/w200${movie['poster_path']}',
+                                                                      '${getImageBaseUrl(region)}/t/p/w200${movie['poster_path']}',
                                                                     ),
                                                                     fit: BoxFit
                                                                         .cover,
@@ -1184,15 +1121,8 @@ class _MovieDetailPageDesktopState extends State<MovieDetailPageDesktop> {
                         alignment: Alignment.center,
                         child: ExpansionTile(
                           collapsedIconColor: Theme.of(context).primaryColor,
-                          title: Text(
-                            'Other Info',
-                            style: TextStyle(
-                              color: Theme.of(context).primaryColor,
-                              fontSize: Platform.isAndroid || Platform.isIOS
-                                  ? 18
-                                  : 30,
-                            ),
-                          ),
+                          title: Text('Other Info',
+                              style: getMovieTitleTextStyle(widget.movieId)),
                           children: [
                             Padding(
                               padding: const EdgeInsets.fromLTRB(25, 10, 0, 0),

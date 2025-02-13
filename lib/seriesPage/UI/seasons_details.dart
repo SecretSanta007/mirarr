@@ -1,16 +1,20 @@
 import 'dart:convert';
 import 'dart:ui';
 
+import 'package:Mirarr/functions/get_base_url.dart';
+import 'package:Mirarr/functions/regionprovider_class.dart';
 import 'package:Mirarr/moviesPage/UI/cast_crew_row.dart';
+import 'package:Mirarr/seriesPage/UI/tvchart_table.dart';
+import 'package:Mirarr/seriesPage/checkers/custom_tmdb_ids_effects_series.dart';
 import 'package:Mirarr/seriesPage/function/fetch_episode_cast_crew.dart';
 import 'package:Mirarr/seriesPage/function/torrent_links_series.dart';
 import 'package:Mirarr/seriesPage/function/watch_links_series.dart';
 import 'package:Mirarr/widgets/custom_divider.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
 
 final apiKey = dotenv.env['TMDB_API_KEY'];
 final apiOmdbKey = dotenv.env['OMDB_API_KEY_FOR_EPISODES'];
@@ -40,9 +44,7 @@ Future<String?> fetchImdbRating(
         return data['imdbRating'];
       }
     } catch (e) {
-      if (kDebugMode) {
-        print(e);
-      }
+      throw Exception('Error fetching IMDb rating: $e');
     }
     return null;
   });
@@ -67,18 +69,19 @@ Future<Map<int, String>> fetchSeasonImdbRatings(
         };
       }
     } catch (e) {
-      if (kDebugMode) {
-        print('Error fetching season IMDb ratings: $e');
-      }
+      throw Exception('Error fetching IMDb rating: $e');
     }
     return {};
   });
 }
 
-Future<List<dynamic>> fetchSeasons(int serieId) async {
+Future<List<dynamic>> fetchSeasons(int serieId, BuildContext context) async {
   return _cachedApiCall('seasons_$serieId', () async {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    final baseUrl = getBaseUrl(region);
     final response = await http.get(
-      Uri.parse('https://api.themoviedb.org/3/tv/$serieId?api_key=$apiKey'),
+      Uri.parse('${baseUrl}tv/$serieId?api_key=$apiKey'),
     );
 
     if (response.statusCode == 200) {
@@ -96,7 +99,7 @@ void seasonsAndEpisodes(
     context: context,
     builder: (BuildContext context) {
       return FutureBuilder<List<dynamic>>(
-        future: fetchSeasons(serieId),
+        future: fetchSeasons(serieId, context),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -128,21 +131,48 @@ void seasonsAndEpisodes(
                 child: CustomScrollView(
                   slivers: [
                     SliverToBoxAdapter(
-                      child: Text(
-                        'Seasons',
-                        style: TextStyle(
-                          fontSize: 24,
-                          color: Theme.of(context).primaryColor,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => TvChartTable(
+                                      imdbId: imdbId,
+                                    ),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor:
+                                    getSeriesColor(context, serieId),
+                                minimumSize: const Size(double.infinity, 50),
+                              ),
+                              child: Text('View Episode Ratings Table',
+                                  style: getSeriesButtonTextStyle(serieId)),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 0, 0, 16),
+                            child: Text('Seasons',
+                                style: getSeriesTitleTextStyle(serieId)),
+                          ),
+                        ],
                       ),
                     ),
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
                           final season = seasons[index];
+                          final region = Provider.of<RegionProvider>(context,
+                                  listen: false)
+                              .currentRegion;
                           final coverUrl = season['poster_path'] != null
-                              ? 'https://image.tmdb.org/t/p/w500${season['poster_path']}'
+                              ? '${getImageBaseUrl(region)}/t/p/w500${season['poster_path']}'
                               : null;
                           final isAirDateNull = season['air_date'] == null;
                           final isEpisodeCountZero =
@@ -186,7 +216,7 @@ void seasonsAndEpisodes(
                                   Icons.arrow_forward,
                                   color: isAirDateNull
                                       ? Colors.grey
-                                      : Theme.of(context).primaryColor,
+                                      : getSeriesColor(context, serieId),
                                 ),
                                 onTap: isAirDateNull && isEpisodeCountZero
                                     ? null
@@ -215,12 +245,14 @@ void seasonsAndEpisodes(
   );
 }
 
-Future<List<dynamic>> fetchEpisodesGuide(
-    int seasonNumber, int serieId, String serieName, String imdbId) async {
+Future<List<dynamic>> fetchEpisodesGuide(BuildContext context, int seasonNumber,
+    int serieId, String serieName, String imdbId) async {
   return _cachedApiCall('episodes_guide_$serieId$seasonNumber', () async {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    final baseUrl = getBaseUrl(region);
     final episodesResponse = await http.get(
-      Uri.parse(
-          'https://api.themoviedb.org/3/tv/$serieId/season/$seasonNumber?api_key=$apiKey'),
+      Uri.parse('${baseUrl}tv/$serieId/season/$seasonNumber?api_key=$apiKey'),
     );
 
     final ratingsMap = await fetchSeasonImdbRatings(imdbId, seasonNumber);
@@ -247,7 +279,8 @@ void episodesGuide(int seasonNumber, BuildContext context, int serieId,
     context: context,
     builder: (BuildContext context) {
       return FutureBuilder<List<dynamic>>(
-        future: fetchEpisodesGuide(seasonNumber, serieId, serieName, imdbId),
+        future: fetchEpisodesGuide(
+            context, seasonNumber, serieId, serieName, imdbId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -262,14 +295,7 @@ void episodesGuide(int seasonNumber, BuildContext context, int serieId,
               height: MediaQuery.of(context).size.height * 0.5,
               child: Column(
                 children: [
-                  Text(
-                    'Episodes',
-                    style: TextStyle(
-                      fontSize: 24,
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Text('Episodes', style: getSeriesTitleTextStyle(serieId)),
                   const SizedBox(height: 10),
                   ScrollConfiguration(
                     behavior: const ScrollBehavior().copyWith(
@@ -286,8 +312,11 @@ void episodesGuide(int seasonNumber, BuildContext context, int serieId,
                         itemCount: episodes.length,
                         itemBuilder: (context, index) {
                           final episode = episodes[index];
+                          final region = Provider.of<RegionProvider>(context,
+                                  listen: false)
+                              .currentRegion;
                           final coverUrl = episode['still_path'] != null
-                              ? 'https://image.tmdb.org/t/p/w500${episode['still_path']}'
+                              ? '${getImageBaseUrl(region)}/t/p/w500${episode['still_path']}'
                               : null;
 
                           bool isReleased = true;
@@ -362,7 +391,7 @@ void episodesGuide(int seasonNumber, BuildContext context, int serieId,
                                       ),
                                     Icon(Icons.arrow_forward,
                                         color: isReleased
-                                            ? Theme.of(context).primaryColor
+                                            ? getSeriesColor(context, serieId)
                                             : Colors.grey),
                                   ],
                                 ),
@@ -391,13 +420,16 @@ void episodesGuide(int seasonNumber, BuildContext context, int serieId,
   );
 }
 
-Future<Map<String, dynamic>> fetchEpisodesDetails(
+Future<Map<String, dynamic>> fetchEpisodesDetails(BuildContext context,
     int seasonNumber, int episodeNumber, int serieId) async {
   return _cachedApiCall('episode_details_$serieId$seasonNumber$episodeNumber',
       () async {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    final baseUrl = getBaseUrl(region);
     final response = await http.get(
       Uri.parse(
-          'https://api.themoviedb.org/3/tv/$serieId/season/$seasonNumber/episode/$episodeNumber?api_key=$apiKey'),
+          '${baseUrl}tv/$serieId/season/$seasonNumber/episode/$episodeNumber?api_key=$apiKey'),
     );
 
     if (response.statusCode == 200) {
@@ -410,12 +442,14 @@ Future<Map<String, dynamic>> fetchEpisodesDetails(
 
 void episodeDetails(int seasonNumber, int episodeNumber, BuildContext context,
     int serieId, String serieName, String imdbId) {
+  final region =
+      Provider.of<RegionProvider>(context, listen: false).currentRegion;
   showModalBottomSheet(
     context: context,
     builder: (BuildContext context) {
       return FutureBuilder<Map<String, dynamic>>(
         future: Future.wait([
-          fetchEpisodesDetails(seasonNumber, episodeNumber, serieId),
+          fetchEpisodesDetails(context, seasonNumber, episodeNumber, serieId),
           fetchImdbRating(imdbId, seasonNumber, episodeNumber)
         ]).then((results) =>
             {'episodeDetails': results[0], 'imdbRating': results[1]}),
@@ -441,14 +475,8 @@ void episodeDetails(int seasonNumber, int episodeNumber, BuildContext context,
                   children: [
                     Padding(
                       padding: EdgeInsets.fromLTRB(25, 10, 0, 0),
-                      child: Text(
-                        'Episode Overview',
-                        style: TextStyle(
-                          color: Theme.of(context).primaryColor,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      child: Text('Episode Overview',
+                          style: getSeriesTitleTextStyle(serieId)),
                     ),
                     const SizedBox(height: 10),
                     if (imdbRating != null && imdbRating.isNotEmpty)
@@ -479,15 +507,12 @@ void episodeDetails(int seasonNumber, int episodeNumber, BuildContext context,
                               child: SizedBox(
                             width: double.infinity,
                             child: FloatingActionButton(
-                              backgroundColor: Theme.of(context).primaryColor,
+                              backgroundColor: getSeriesColor(context, serieId),
                               onPressed: () => showWatchOptions(context,
                                   serieId, seasonNumber, episodeNumber),
-                              child: const Text(
+                              child: Text(
                                 'Watch',
-                                style: TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold),
+                                style: getSeriesButtonTextStyle(serieId),
                               ),
                             ),
                           ))
@@ -503,7 +528,7 @@ void episodeDetails(int seasonNumber, int episodeNumber, BuildContext context,
                               child: SizedBox(
                             width: double.infinity,
                             child: FloatingActionButton(
-                              backgroundColor: Theme.of(context).primaryColor,
+                              backgroundColor: getSeriesColor(context, serieId),
                               onPressed: () => showTorrentOptions(
                                   context,
                                   serieName,
@@ -511,12 +536,9 @@ void episodeDetails(int seasonNumber, int episodeNumber, BuildContext context,
                                   seasonNumber,
                                   episodeNumber,
                                   imdbId),
-                              child: const Text(
+                              child: Text(
                                 'Torrent Search',
-                                style: TextStyle(
-                                    color: Colors.black,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold),
+                                style: getSeriesButtonTextStyle(serieId),
                               ),
                             ),
                           ))
@@ -525,7 +547,7 @@ void episodeDetails(int seasonNumber, int episodeNumber, BuildContext context,
                     ),
                     FutureBuilder(
                       future: fetchEpisodeCastAndCrew(
-                          serieId, seasonNumber, episodeNumber),
+                          serieId, seasonNumber, episodeNumber, region),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState ==
                             ConnectionState.waiting) {
@@ -553,10 +575,7 @@ void episodeDetails(int seasonNumber, int episodeNumber, BuildContext context,
                                   child: Text(
                                     'Guest Stars',
                                     textAlign: TextAlign.justify,
-                                    style: TextStyle(
-                                        color: Theme.of(context).primaryColor,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w700),
+                                    style: getSeriesTitleTextStyle(serieId),
                                   ),
                                 ),
                                 const CustomDivider(),
@@ -569,10 +588,7 @@ void episodeDetails(int seasonNumber, int episodeNumber, BuildContext context,
                                   child: Text(
                                     'Crew',
                                     textAlign: TextAlign.justify,
-                                    style: TextStyle(
-                                        color: Theme.of(context).primaryColor,
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.w700),
+                                    style: getSeriesTitleTextStyle(serieId),
                                   ),
                                 ),
                                 const CustomDivider(),

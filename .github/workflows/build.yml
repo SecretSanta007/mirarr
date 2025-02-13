@@ -24,7 +24,7 @@ jobs:
           java-version: '17' 
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0'
+          flutter-version: '3.29.0'
       - uses: actions/checkout@v2
       - run: flutter pub get
       - run: |
@@ -46,20 +46,13 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-      - name: Verify APK signature (apksigner)
-        run: |
-          $ANDROID_HOME/build-tools/33.0.0/apksigner verify --verbose build/app/outputs/flutter-apk/app-release.apk
       - name: Verify APK signature (jarsigner)
         run: |
           jarsigner -verify -verbose -certs build/app/outputs/flutter-apk/app-release.apk
-
-      - name: APK Info
-        run: |
-          $ANDROID_HOME/build-tools/33.0.0/aapt dump badging build/app/outputs/flutter-apk/app-release.apk
       - name: List APK Directory
         run: ls -alh ${{ github.workspace }}/build/app/outputs/flutter-apk
       - name: Upload APK
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: apk
           path: ${{ github.workspace }}/build/app/outputs/flutter-apk/app-release.apk
@@ -78,7 +71,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0'
+          flutter-version: '3.29.0'
       - run: flutter pub get
       - run: |
           echo "TMDB_API_READ=${{ secrets.TMDB_API_READ }}" > .env
@@ -96,7 +89,7 @@ jobs:
           cd ${{ github.workspace }}/build/windows/x64/runner/Release
           powershell -Command "Compress-Archive -Path * -DestinationPath mirarr-windows.zip"
       - name: Upload binary
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: windows-zip
           path: ${{ github.workspace }}/build/windows/x64/runner/Release/mirarr-windows.zip
@@ -115,7 +108,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.19.0'
+          flutter-version: '3.29.0'
       - run: sudo apt-get update
       - run: sudo apt-get install -y ninja-build cmake libgtk-3-dev
       - run: flutter pub get
@@ -135,7 +128,7 @@ jobs:
           cd ${{ github.workspace }}/build/linux/x64/release/bundle
           zip -r mirarr.zip *
       - name: Upload binary
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: linux-zip
           path: ${{ github.workspace }}/build/linux/x64/release/bundle/mirarr.zip
@@ -153,7 +146,7 @@ jobs:
           - uses: actions/checkout@v2
           - uses: subosito/flutter-action@v2
             with:
-              flutter-version: '3.19.0'
+              flutter-version: '3.29.0'
           - run: flutter pub get
           - run: |
               echo "TMDB_API_READ=${{ secrets.TMDB_API_READ }}" > .env
@@ -170,7 +163,7 @@ jobs:
               cp -r Runner.app Payload
               zip -r mirarr.ipa Payload
           - name: Upload binary
-            uses: actions/upload-artifact@v2
+            uses: actions/upload-artifact@v4
             with:
               name: ios-app
               path: build/ios/iphoneos/mirarr.ipa
@@ -190,35 +183,42 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Download APK
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: apk
-          path: ./out/
+          path: ./out/android
 
-      - name: Download EXE
-        uses: actions/download-artifact@v3
+      - name: Download Windows ZIP
+        uses: actions/download-artifact@v4
         with:
           name: windows-zip
-          path: ./out/
+          path: ./out/windows
 
-      - name: Download Linux
-        uses: actions/download-artifact@v3
+      - name: Download Linux ZIP
+        uses: actions/download-artifact@v4
         with:
           name: linux-zip
-          path: ./out/
+          path: ./out/linux
 
-      - name: Download IOS
-        uses: actions/download-artifact@v3
+      - name: Download IOS IPA
+        uses: actions/download-artifact@v4
         with:
           name: ios-app
-          path: ./out/
+          path: ./out/ios
+
+      - name: List output directory
+        run: ls -R ./out
 
       - name: Upload Release
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
         with:
-          files: ./out/*
+          files: |
+            ./out/android/*
+            ./out/windows/*
+            ./out/linux/*
+            ./out/ios/*
           tag_name: ${{ steps.version.outputs.VERSION }}
           draft: false
           prerelease: false

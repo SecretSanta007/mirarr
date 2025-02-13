@@ -1,4 +1,5 @@
 import 'package:Mirarr/functions/themeprovider_class.dart';
+import 'package:Mirarr/functions/regionprovider_class.dart';
 import 'package:Mirarr/widgets/check_updates.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -18,15 +19,21 @@ void main() async {
   await Hive.close();
   if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
     await windowManager.ensureInitialized();
-    WindowManager.instance.setMinimumSize(const Size(1500, 900));
+    WindowManager.instance.setMinimumSize(const Size(1600, 900));
   }
 
   final themeProvider = ThemeProvider(AppThemes.orangeTheme);
   await themeProvider.loadTheme();
 
+  final regionProvider = RegionProvider('worldwide');
+  await regionProvider.loadRegion();
+
   runApp(
-    ChangeNotifierProvider.value(
-      value: themeProvider,
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: themeProvider),
+        ChangeNotifierProvider.value(value: regionProvider),
+      ],
       child: const MyApp(),
     ),
   );
@@ -43,8 +50,7 @@ class MyApp extends StatelessWidget {
         title: 'Mirarr',
         theme: themeProvider.currentTheme,
         home: const Scaffold(
-          body:
-              ConnectivityWidget(), // Use ConnectivityWidget as the home screen
+          body: ConnectivityWidget(),
         ),
       );
     });
@@ -56,10 +62,14 @@ class ConnectivityWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder(
-      stream: Connectivity().onConnectivityChanged,
-      builder: (context, AsyncSnapshot<ConnectivityResult> snapshot) {
-        if (!snapshot.hasData || snapshot.data == ConnectivityResult.none) {
+    return FutureBuilder<List<ConnectivityResult>>(
+      future: Connectivity().checkConnectivity(),
+      builder: (context, AsyncSnapshot<List<ConnectivityResult>> snapshot) {
+        if (!snapshot.hasData ||
+            snapshot.data?.isEmpty == true ||
+            snapshot.data
+                    ?.every((result) => result == ConnectivityResult.none) ==
+                true) {
           return const Padding(
             padding: EdgeInsets.all(20.0),
             child: Center(

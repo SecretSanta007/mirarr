@@ -1,19 +1,25 @@
+import 'package:Mirarr/functions/get_base_url.dart';
+import 'package:Mirarr/functions/regionprovider_class.dart';
 import 'package:flutter/material.dart';
 import 'package:Mirarr/seriesPage/models/serie.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
 
 class CustomSeriesWidget extends StatelessWidget {
   final Serie serie;
 
   const CustomSeriesWidget({super.key, required this.serie});
-  Future<bool> checkAvailability(int movieId) async {
-    final apiKey = dotenv.env['TMDB_API_KEY']; // Replace with your TMDB API Key
+  Future<bool> checkAvailability(int movieId, BuildContext context) async {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
+    final baseUrl = getBaseUrl(region);
+    final apiKey = dotenv.env['TMDB_API_KEY'];
     final response = await http.get(
       Uri.parse(
-        'https://api.themoviedb.org/3/movie/$movieId/watch/providers?api_key=$apiKey',
+        '${baseUrl}movie/$movieId/watch/providers?api_key=$apiKey',
       ),
     );
 
@@ -23,13 +29,14 @@ class CustomSeriesWidget extends StatelessWidget {
 
       return results.isNotEmpty;
     } else {
-      // Handle error here
       return false;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final region =
+        Provider.of<RegionProvider>(context, listen: false).currentRegion;
     return Card(
       elevation: 4,
       child: Container(
@@ -40,7 +47,7 @@ class CustomSeriesWidget extends StatelessWidget {
           image: serie.posterPath.isNotEmpty
               ? DecorationImage(
                   image: CachedNetworkImageProvider(
-                    'https://image.tmdb.org/t/p/w500${serie.posterPath}',
+                    '${getImageBaseUrl(region)}/t/p/w500${serie.posterPath}',
                   ),
                   fit: BoxFit.cover,
                 )

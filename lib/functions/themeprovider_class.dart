@@ -47,6 +47,9 @@ class ThemeProvider extends ChangeNotifier {
         case 'mono':
           _currentTheme = AppThemes.monoFontTheme;
           break;
+        case 'nothing':
+          _currentTheme = AppThemes.nothingFontTheme;
+          break;
         // Add more cases for additional themes
       }
       notifyListeners();
@@ -69,6 +72,8 @@ class ThemeProvider extends ChangeNotifier {
       themeName = 'green';
     } else if (_currentTheme == AppThemes.monoFontTheme) {
       themeName = 'mono';
+    } else if (_currentTheme == AppThemes.nothingFontTheme) {
+      themeName = 'nothing';
     }
     await _prefs?.setString('theme', themeName);
   }
@@ -76,6 +81,13 @@ class ThemeProvider extends ChangeNotifier {
 
 class AppThemes {
   static final ThemeData orangeTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
     fontFamily: 'Poppins',
     colorScheme: const ColorScheme(
       brightness: Brightness.light,
@@ -98,6 +110,13 @@ class AppThemes {
   );
 
   static final ThemeData blueTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
     fontFamily: 'Poppins',
     colorScheme: const ColorScheme(
       brightness: Brightness.light,
@@ -120,6 +139,13 @@ class AppThemes {
   );
 
   static final ThemeData redTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
     fontFamily: 'Poppins',
     colorScheme: const ColorScheme(
       brightness: Brightness.light,
@@ -142,6 +168,13 @@ class AppThemes {
   );
 
   static final ThemeData greyTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
     fontFamily: 'Poppins',
     colorScheme: const ColorScheme(
       brightness: Brightness.light,
@@ -164,6 +197,13 @@ class AppThemes {
   );
 
   static final ThemeData yellowTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
     fontFamily: 'Poppins',
     colorScheme: const ColorScheme(
       brightness: Brightness.light,
@@ -186,6 +226,13 @@ class AppThemes {
   );
 
   static final ThemeData brownTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
     fontFamily: 'Poppins',
     colorScheme: const ColorScheme(
       brightness: Brightness.light,
@@ -207,6 +254,13 @@ class AppThemes {
     scaffoldBackgroundColor: Colors.black,
   );
   static final ThemeData greenTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
     fontFamily: 'Poppins',
     colorScheme: const ColorScheme(
       brightness: Brightness.light,
@@ -228,7 +282,43 @@ class AppThemes {
     scaffoldBackgroundColor: Colors.black,
   );
   static final ThemeData monoFontTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
     fontFamily: 'RobotoMono',
+    colorScheme: const ColorScheme(
+      brightness: Brightness.light,
+      primary: Colors.grey,
+      onPrimary: Colors.blueGrey,
+      secondary: Colors.blueGrey,
+      onSecondary: Colors.grey,
+      error: Colors.red,
+      onError: Colors.grey,
+      background: Colors.black,
+      onBackground: Colors.black,
+      surface: Colors.black,
+      onSurface: Colors.black,
+    ),
+    highlightColor: Colors.blueGrey,
+    secondaryHeaderColor: Colors.blueGrey,
+    hintColor: Colors.grey[400],
+    cardColor: Colors.grey,
+    scaffoldBackgroundColor: Colors.black,
+  );
+
+  static final ThemeData nothingFontTheme = ThemeData(
+    progressIndicatorTheme: const ProgressIndicatorThemeData(year2023: false),
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: Map<TargetPlatform, PageTransitionsBuilder>.fromIterable(
+        TargetPlatform.values,
+        value: (_) => const FadeForwardsPageTransitionsBuilder(),
+      ),
+    ),
+    fontFamily: 'Nothing',
     colorScheme: const ColorScheme(
       brightness: Brightness.light,
       primary: Colors.grey,
